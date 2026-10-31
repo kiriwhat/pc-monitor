@@ -1,33 +1,15 @@
-# ---- 通用 ----
-.DS_Store
-Thumbs.db
-*.log
-
-# ---- .NET 采集端 ----
+# 编译产物 / 本地配置 / 运行时文件不入库
+agent/publish/
 agent/bin/
 agent/obj/
-agent/publish/
 agent/config.json
-agent/*.user
-
-# ---- Node 中继服务器 ----
+agent/app.ico
 server/node_modules/
-server/config.json
-server/*.log
-server/wstest/bin/
-server/wstest/obj/
-
-# ---- Android 工程 ----
 android/.gradle/
 android/build/
 android/app/build/
-android/local.properties
 android/.idea/
-android/captures/
+android/local.properties
 *.apk
-*.aab
-
-# ---- 环境/编辑器 ----
-.vscode/
-.idea/
-*.iml
+*.log
+.DS_Store

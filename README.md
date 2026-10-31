@@ -1,119 +1,135 @@
-# PC 远程监控（PcMonitor）
+# PC 远程监控（PC Monitor）
 
-用手机远程监控 Windows 电脑性能的完整开源方案，类似 Windows 任务管理器的手持版。
+一个**类似 Windows 任务管理器**的远程监控系统：在安卓手机上实时查看电脑的 CPU / 内存 / 磁盘 / 网络占用和进程列表，并可以**远程结束进程**。
 
-支持**公网远程**（人在外面也能看家里的电脑）与**局域网直连**（同一 WiFi 下零配置）两种模式，实时展示 CPU / 内存 / 磁盘 / 网络曲线，并可查看进程列表、远程结束进程。
+三端架构：**Windows 采集端** 采集性能数据 → **中继服务器**（公网转发） → **安卓手机** 实时查看。
+
+## 架构
 
 ```
-┌──────────────┐   WebSocket   ┌────────────────┐   WebSocket   ┌──────────────────┐
-│  安卓手机端   │ ◄───────────► │  中继服务器     │ ◄───────────► │  Windows 采集端  │
-│  (Kotlin+Compose) │   JSON 协议  │ (Node.js + ws) │   JSON 协议  │  (C#/.NET 8)     │
-└──────────────┘               └────────────────┘               └──────────────────┘
-        ▲ 局域网模式可直连（HTTP + SSE，端口 8668）▲
+┌─────────────┐    WebSocket(JSON)    ┌──────────────┐    WebSocket(JSON)    ┌─────────────┐
+│  Windows 采集端 │  ─────────────────► │  中继服务器    │  ◄─────────────────  │  安卓手机    │
+│ PcMonitorAgent │                     │  Node.js + ws │                     │  Android App │
+│  C# / .NET 8  │                      │  公网云服务器   │                     │  Kotlin+Compose│
+└─────────────┘                       └──────────────┘                       └─────────────┘
+        ▲                                    │                                      ▲
+        │          ┌──────────────────────────┘                                      │
+        │          │ 局域网备选：电脑直接开 HTTP+SSE（端口 8668），同一 WiFi 下直连           │
+        └──────────┴──────────────────────────────────────────────────────────────────┘
 ```
 
-## 功能特性
+- **公网模式（推荐）**：手机在任何网络都能连回电脑，需一台有公网 IP 的云服务器跑中继程序。
+- **局域网模式**：手机与电脑在同一 WiFi 下直连电脑，无需服务器。
 
-- **实时监控**：CPU 使用率/核数/频率、内存、磁盘、网络上下行速率，曲线图 120 点滚动
-- **进程管理**：进程列表按 CPU/内存排序，一键远程结束进程
-- **双模式连接**：公网中继（经云服务器转发）或局域网直连（HTTP + SSE）
-- **安全认证**：统一 Token 口令，防止他人访问；公网部署建议套 WSS + HTTPS
-- **轻量自绘图表**：安卓端用 Compose Canvas 自绘曲线，无三方图表库依赖
+## 功能
+
+- 实时监控：CPU 占用率 / 核心数 / 主频、内存占用、磁盘占用（多盘）、网络上下行速率
+- 实时曲线：CPU / 内存占用曲线、网络速率曲线
+- 进程列表：按 CPU 或内存排序，显示 PID / 名称 / 占用
+- 远程结束进程（支持整棵进程树）
+- 自动重连：断线后采集端与手机端均自动重连
+- 认证保护：三端共享同一 Token，未认证连接 30 秒内被踢出
 
 ## 目录结构
 
 ```
 pc-monitor/
-├── server/          # 中继服务器（Node.js，仅依赖 ws）
-│   ├── server.js          # 服务器主程序
-│   ├── test-relay.js      # 服务器自测脚本
-│   ├── test-phone.js      # 模拟手机端到端测试脚本
-│   └── wstest/            # 最小 C# WebSocket 回归测试项目
-├── agent/           # Windows 采集端（C#/.NET 8 WinForms，零外部 NuGet）
-│   ├── Core/              # 配置/日志/指标采样/进程采样
-│   ├── Network/           # 中继 WebSocket 客户端 + 局域网 HTTP 服务
-│   ├── Ui/                # 系统托盘
-│   └── config.example.json
-├── android/         # 安卓端（Kotlin + Jetpack Compose）
-│   └── app/src/main/java/com/pcmonitor/app/
-│       ├── data/          # 数据模型 / 双模式数据源 / 设置存储
-│       ├── viewmodel/     # 状态管理
-│       └── ui/            # 仪表盘 / 进程列表 / 设置 / 自绘图表
-└── docs/
-    └── protocol.md        # 通信协议 v1.0（权威定义）
+├── server/     # 中继服务器（Node.js + ws，唯一依赖）
+├── agent/      # Windows 采集端（C#/.NET 8 WinForms，零第三方依赖）
+├── android/    # 安卓 App（Kotlin + Jetpack Compose）
+└── docs/       # 通信协议文档
 ```
 
 ## 快速开始
 
-### 第 1 步：电脑端（被监控的 Windows）
+### 第一步：部署中继服务器（公网模式）
 
-1. 发布采集端（需 .NET SDK 8）：
-   ```
-   dotnet publish agent/PcMonitorAgent.csproj -c Release -r win-x64 --self-contained true -o agent/publish/win-x64
-   ```
-   或直接使用已发布的 `PcMonitorAgent.exe`（免安装，自包含）。
-2. 在 exe 同目录放置 `config.json`（首次启动也会自动生成）：
-   ```json
-   {
-     "mode": "relay",
-     "serverUrl": "ws://你的服务器:8787",
-     "token": "你的强口令",
-     "deviceId": "default",
-     "localPort": 8668,
-     "pollIntervalMs": 1500
-   }
-   ```
-   - `mode: "relay"` 公网模式；`mode: "local"` 局域网模式（监听 8668 端口）
-   - 局域网模式如需监听 0.0.0.0（允许局域网内其他设备访问），以管理员运行一次：
-     `netsh http add urlacl url=http://+:8668/ user=Everyone`
-3. 运行 exe，系统托盘出现图标即表示在线（托盘菜单可重启服务 = 热重载配置）。
+需要一台有公网 IP 的云服务器（阿里云/腾讯云等）。
 
-### 第 2 步：中继服务器（公网模式才需要，可用云服务器）
+```bash
+# 1. 安装 Node.js 18+（建议 20+）
+# 2. 上传 server/ 目录到服务器，安装依赖
+cd server
+npm install
 
-参见 [docs/DEPLOY.md](docs/DEPLOY.md)。
+# 3. 生成强随机口令
+openssl rand -hex 24
 
-### 第 3 步：安卓端
+# 4. 启动（TOKEN 改为你自己的）
+export TOKEN=你的随机口令
+node server.js
 
-1. 用 Android Studio（Ladybug 及以上，自带 JDK 17）打开 `android/` 目录，等待 Gradle 同步完成。
-2. 连接手机（开启开发者模式 / USB 调试），或 Build → Build APK(s) 后手动安装。
-3. 打开 App 进入「设置」：
-   - **公网模式**：选「公网远程」，填中继服务器地址 `ws://服务器IP:8787` 与 Token；
-   - **局域网模式**：选「局域网」，填 `http://电脑IP:8668` 与 Token。
-4. 保存并连接，回到「仪表盘」即可看到实时数据；「进程」页可排序与结束进程。
+# 可选：用 pm2 守护进程
+npm install -g pm2
+TOKEN=你的随机口令 pm2 start server.js --name pc-monitor
+pm2 save
+```
 
-> 构建要求：JDK 17、Gradle 8.10.2（项目含 wrapper 配置）、Android SDK 34。首次同步需联网下载依赖。
-> 仓库未包含二进制文件 `gradle-wrapper.jar` 与 `app.ico`（GitHub 文件 API 仅支持文本）：用 Android Studio 打开时会自动生成 wrapper jar；采集端缺少 `app.ico` 时 csproj 已条件跳过，可正常编译。
+> 安全提示：
+> - 建议用 `pm2` 或 `systemd` 守护，崩溃自动重启。
+> - 公网模式下建议在服务器防火墙只放行 8787 端口，并考虑用 nginx 做 TLS（wss://）。
+> - 中继服务器本身不保存任何数据，只做转发，但请勿把 Token 泄露给他人。
 
-## 安全提示
+### 第二步：运行 Windows 采集端
 
-- 三端（采集端 / 服务器 / 手机）使用**同一个强 Token**，采集端与服务器各自独立校验。
-- 公网部署务必：服务器只开放 8787 端口；生产环境建议给中继套 **WSS**（Nginx/Caddy 反代 + TLS），手机端填 `wss://` 地址。
-- Token 泄露等于拿到你电脑的控制权（可结束进程），请妥善保管、定期更换。
-- 结束**系统关键进程**需要电脑端以管理员身份运行采集端，否则会被拒绝。
+1. 下载或编译 `PcMonitorAgent.exe`（见下文「构建采集端」）。
+2. 在 exe 同目录创建 `config.json`（首次运行会自动生成），内容参考 `config.example.json`：
+
+```json
+{
+  "Mode": "relay",
+  "ServerUrl": "ws://你的服务器IP或域名:8787",
+  "Token": "与服务器一致的随机口令",
+  "DeviceId": "default",
+  "LocalPort": 8668,
+  "PollIntervalMs": 2000
+}
+```
+
+3. 双击运行，程序驻留系统托盘。右键托盘图标可查看状态、重启服务、退出。
+4. **结束系统级进程**需要以管理员身份运行。
+
+> 局域网模式：把 `Mode` 改为 `local`，电脑监听 `http://+:8668/`。
+> 首次以普通用户运行需执行：`netsh http add urlacl url=http://+:8668/ user=Everyone`
+> 或以管理员身份运行一次（代码注释与下文有说明）。
+
+### 第三步：编译并安装安卓 App
+
+1. 用 **Android Studio**（建议最新稳定版，需内置/配置 JDK 17）打开 `android/` 目录。
+2. 等待 Gradle 同步完成（Gradle 8.10.2 / AGP 8.7.2 会自动下载）。
+3. 连接手机（开启 USB 调试）点击 Run，或 `Build ▸ Build APK` 生成安装包。
+4. 打开 App → 「设置」页：
+   - 选择「公网远程」：填写中继服务器地址 `ws://服务器IP:8787`、Token、DeviceId
+   - 选择「局域网」：填写 `http://电脑IP:8668`、Token
+   - 点「保存并连接」，回「仪表盘」查看实时数据。
+
+> 若服务器使用 wss://（HTTPS/TLS），安卓端地址同样填 `wss://...`。
+
+## 构建采集端（可选）
+
+需要 .NET SDK 8：
+
+```bash
+cd agent
+# 发布为自包含单文件 exe（Windows x64）
+dotnet publish -c Release -r win-x64 --self-contained true -o publish/win-x64
+```
+
+产物在 `agent/publish/win-x64/PcMonitorAgent.exe`，可直接拷贝到目标电脑运行。
 
 ## 通信协议
 
-完整定义见 [docs/protocol.md](docs/protocol.md)（JSON over WebSocket，字段 camelCase）。要点：
+详见 [docs/protocol.md](docs/protocol.md)：中继模式 WebSocket JSON 消息（hello/request/response/push/ping/pong）、局域网模式 HTTP+SSE 接口、统一 camelCase 数据格式。
 
-- 认证：连接后发 `hello{role,token,deviceId}`，服务器回 `hello-ok`
-- 请求：`request{reqId,action,deviceId}`，action 含 `metrics` / `processes` / `kill` / `subscribe` / `unsubscribe`
-- 推送：订阅后采集端按 `intervalMs` 周期 `push` 指标快照
-- 心跳：应用层 JSON `ping` / `pong`（兼容 .NET / Java 各 WebSocket 实现）
-- 局域网模式：HTTP + SSE（`/api/status`、`/api/processes`、`/api/kill`、`/api/stream`）
+## 常见问题
 
-## 技术栈
+| 现象 | 排查 |
+| --- | --- |
+| 采集端日志显示已连接，但服务器无记录 | 采集端所在电脑的系统代理（如 Clash）劫持了连接，已内置绕过；确认 ServerUrl 未被代理拦截 |
+| 手机一直「未连接」 | 检查服务器是否放行 8787；三端 Token 是否一致；服务器进程是否存活（pm2 status） |
+| 局域网模式打不开 | 确认同一 WiFi、防火墙放行 8668、URL ACL 已配置 |
+| 结束进程失败 | 采集端需以管理员身份运行；部分系统进程受保护 |
 
-| 端 | 语言/框架 | 说明 |
-|---|---|---|
-| 采集端 | C# / .NET 8 WinForms + P/Invoke | 零外部 NuGet；GetSystemTimes 采样 CPU，GlobalMemoryStatusEx 采样内存 |
-| 中继服务器 | Node.js + ws | 单依赖；token 认证 + 请求路由 + 应用层心跳 |
-| 安卓端 | Kotlin + Jetpack Compose + OkHttp | 双模式数据源；Compose Canvas 自绘曲线 |
+## 免责声明
 
-## 已知限制
-
-- 安卓端与采集端已完成真实链路验证（中继模式端到端测试通过）；安卓 App 请用 Android Studio 构建后真机验证。
-- 局域网模式代码已实现，实测需在采集端本机配置 URL ACL 或管理员运行。
-
-## License
-
-MIT
+本项目仅用于个人学习与自有设备管理。远程结束进程功能有风险，请勿对非本人设备或关键系统进程随意操作。
