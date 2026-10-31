@@ -1,0 +1,33 @@
+# ---- 通用 ----
+.DS_Store
+Thumbs.db
+*.log
+
+# ---- .NET 采集端 ----
+agent/bin/
+agent/obj/
+agent/publish/
+agent/config.json
+agent/*.user
+
+# ---- Node 中继服务器 ----
+server/node_modules/
+server/config.json
+server/*.log
+server/wstest/bin/
+server/wstest/obj/
+
+# ---- Android 工程 ----
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+android/captures/
+*.apk
+*.aab
+
+# ---- 环境/编辑器 ----
+.vscode/
+.idea/
+*.iml
