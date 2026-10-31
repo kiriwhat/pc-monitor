@@ -1,0 +1,16 @@
+{
+  "name": "pc-monitor-relay",
+  "version": "1.0.0",
+  "description": "公网中继服务器：转发 Windows 采集端与安卓手机之间的实时性能数据（WebSocket）",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "license": "MIT"
+}
