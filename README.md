@@ -103,6 +103,14 @@ pm2 save
    - 选择「局域网」：填写 `http://电脑IP:8668`、Token
    - 点「保存并连接」，回「仪表盘」查看实时数据。
 
+> 命令行构建（可选）：仓库未收录 `gradle-wrapper.jar`（二进制文件，GitHub 文本通道无法直接入库）。
+> 用 Android Studio 打开构建**不需要**它（Android Studio 会按 `gradle-wrapper.properties` 自动下载 Gradle）。
+> 若要在命令行运行 `gradlew`，请先放置官方 wrapper：
+> ```
+> curl -L -o android/gradle/wrapper/gradle-wrapper.jar https://raw.githubusercontent.com/gradle/gradle/v8.10.2/gradle/wrapper/gradle-wrapper.jar
+> ```
+> 或直接运行仓库中的一键脚本 `android/gradle/wrapper/download-wrapper.ps1`。
+
 > 若服务器使用 wss://（HTTPS/TLS），安卓端地址同样填 `wss://...`。
 
 ## 构建采集端（可选）
