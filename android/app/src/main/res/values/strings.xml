@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">PC远程监控</string>
+    <string name="tab_dashboard">仪表盘</string>
+    <string name="tab_processes">进程</string>
+    <string name="tab_settings">设置</string>
+</resources>
