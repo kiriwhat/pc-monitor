@@ -1,0 +1,8 @@
+{
+  "Mode": "relay",
+  "ServerUrl": "ws://你的服务器IP或域名:8787",
+  "Token": "用 openssl rand -hex 24 生成一个强随机口令，三端保持一致",
+  "DeviceId": "default",
+  "LocalPort": 8668,
+  "PollIntervalMs": 2000
+}
